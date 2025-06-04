@@ -20,7 +20,7 @@ class DMPPolicyWithPID:
         dt (float): control timestep.
         n_bfs (int): number of basis functions per DMP.
     """
-    def __init__(self, square_pos, demo_path='demos.npz', dt=0.01, n_bfs=20):
+    def __init__(self, square_pos, demo_path="demos.npz", dt=0.01, n_bfs=20):
         # Load and parse demo [CA3 CODE]
             # raw = np.load(demo_path)
             # demos = defaultdict(dict)
