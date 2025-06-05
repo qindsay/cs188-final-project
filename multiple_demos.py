@@ -176,7 +176,7 @@ def paths_regression(traj_set, n_dmps, n_bfs, dt, t_set = None):
         w[d, :] = scipy.linalg.lu_solve(LU, b)
     return w
     # self.learned_position = np.ones(self.n_dmps)
-    
+
 if __name__ == '__main__':
     
     import matplotlib.pyplot as plt

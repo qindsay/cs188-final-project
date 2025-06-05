@@ -3,7 +3,7 @@ from collections import defaultdict
 from dmp import DMP
 from pid import PID
 from load_data import reconstruct_from_npz
-from multiple_demos import combine
+from multiple_demos import paths_regression
 
 
 class DMPPolicyWithPID:
@@ -56,6 +56,21 @@ class DMPPolicyWithPID:
         self.traj0 = dmp0.rollout(new_goal=new_obj_pos + offset)
         self.len0 = len(self.traj0)
         self.segments = [[0, self.len0-1]]
+        
+        #here's my dream workflow - Lindsay
+        '''
+        pretend everything has been split up already
+        weights0 = paths_regression(segment0, all the other parameters)
+        traj0 = dmp.rollout(weights0 + other parameters)
+        append indices to the segments list
+        
+        '''
+        dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
+        dmp0.imitate((ee_pos[start:end]).T)
+        self.traj0 = dmp0.rollout(new_goal=new_obj_pos + offset)
+        self.len0 = len(self.traj0)
+        self.segments = [[0, self.len0-1]]
+        
         
         start1, end1 = segments[1]
         dmp1 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
