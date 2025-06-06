@@ -9,6 +9,7 @@ import robosuite as suite
 from dmp_policy import DMPPolicyWithPID
 from robosuite.utils.placement_samplers import UniformRandomSampler
 
+
 placement_initializer = UniformRandomSampler(
     name="FixedOriSampler",
     mujoco_objects=None,            
@@ -29,11 +30,12 @@ env = suite.make(
     has_renderer=True,
     has_offscreen_renderer=False,
     use_camera_obs=False,
-    placement_initializer=placement_initializer,
-    ignore_done=True  
+    ignore_done=True,
+    camera_names=["agentview"],
 )
 
 success_rate = 0
+
 # reset the environment
 for _ in range(5):
     obs = env.reset()

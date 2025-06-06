@@ -114,9 +114,8 @@ class DMP:
         if y_des.ndim == 1:
             y_des = y_des[None, :]
         D, T = y_des.shape
-
-        interp = interp1d(np.linspace(0, 1, T), y_des,
-                          kind='cubic', axis=1)
+       
+        interp = interp1d(np.linspace(0, 1, T), y_des, kind='cubic', axis=1)
         y_demo = interp(np.linspace(0, 1, self.cs.timesteps))   # (D,T')
 
         y = y_demo
@@ -134,24 +133,24 @@ class DMP:
             self.by[:, None] * (self.goal[:, None] - y) - dy
         )
 
-        x_track = self.cs.rollout()
-        psi_raw = self.__psi(x_track)                     # (T', n_bfs)
-        psi = psi_raw / (psi_raw.sum(axis=1, keepdims=True) + 1e-10)
-        eps = 1e-6
-        self.w = np.vstack([
-            np.linalg.lstsq(psi * x_track[:, None], f_target[d],
-                            rcond=None)[0] /
-            (self.goal[d] - self.y0[d] if
-             abs(self.goal[d] - self.y0[d]) > eps else 1.0)
-            for d in range(self.n_dmps)
-        ])
+        # x_track = self.cs.rollout()
+        # psi_raw = self.__psi(x_track)                     # (T', n_bfs)
+        # psi = psi_raw / (psi_raw.sum(axis=1, keepdims=True) + 1e-10)
+        # eps = 1e-6
+        # self.w = np.vstack([
+        #     np.linalg.lstsq(psi * x_track[:, None], f_target[d],
+        #                     rcond=None)[0] /
+        #     (self.goal[d] - self.y0[d] if
+        #      abs(self.goal[d] - self.y0[d]) > eps else 1.0)
+        #     for d in range(self.n_dmps)
+        # ])
 
-        return y_demo
+        return f_target, self.y0, self.goal
     
     def rollout(
         self,
         tau: float = 1.0,
-        error: float = 0.0,
+        error: float = 0.0, 
         new_goal: np.ndarray = None
     ) -> np.ndarray:
         """
@@ -176,7 +175,7 @@ class DMP:
             psi = np.exp(-self.widths * (phase - self.centers)**2) #does this ever get initialized correctly?
             
             for d in range(self.n_dmps):            
-         
+                
                 f = (np.dot(psi, self.w[d]) * phase) / (psi.sum() + 1e-10)
                 
                 k = self.goal[d] - self.y0[d]
@@ -188,6 +187,47 @@ class DMP:
             y_track[:, t] = self.y
             
         return y_track.T
+
+    def rollout_adapted(
+            self,
+            weights, widths, centers, y0, tau: float = 1.0,
+            error: float = 0.0, 
+            new_goal: np.ndarray = None
+        ) -> np.ndarray:
+            """
+            Generate a new trajectory from the DMP.
+
+            Args:
+                tau (float): Temporal scaling.
+                error (float): Feedback coupling.
+                new_goal (np.ndarray, optional): Override goal.
+
+            Returns:
+                np.ndarray: Generated trajectory (T x D).
+            """    
+            if new_goal is not None:
+                self.goal = np.atleast_1d(new_goal)
+            
+            self.reset_state() #what is y0?
+            y_track = np.zeros((self.n_dmps, self.cs.timesteps))
+            
+            for t in range(self.cs.timesteps):
+                phase = self.cs.step(tau=tau, error_coupling=1/(1+error))
+                psi = np.exp(-widths * (phase - centers)**2) #does this ever get initialized correctly?
+                
+                for d in range(self.n_dmps):            
+            
+                    f = (np.dot(psi, weights[d]) * phase) / (psi.sum() + 1e-10)
+                    k = self.goal[d] - y0[d]
+            
+                    self.ddy[d] = (
+                        self.ay[d] * (self.by[d] * (self.goal[d] - self.y[d]) - self.dy[d]) + k * f
+                    )
+                    self.dy[d] += self.ddy[d] * self.dt * tau * (1.0 / (1.0 + error))
+                    self.y[d] += self.dy[d] * self.dt * tau * (1.0 / (1.0 + error))
+                y_track[:, t] = self.y
+                
+            return y_track.T
 
 # ==============================
 # DMP Unit test
