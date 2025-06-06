@@ -145,7 +145,7 @@ class DMP:
         #     for d in range(self.n_dmps)
         # ])
 
-        return f_target
+        return f_target, self.y0, self.goal
     
     def rollout(
         self,
@@ -190,7 +190,7 @@ class DMP:
 
     def rollout_adapted(
             self,
-            weights, widths, centers, tau: float = 1.0,
+            weights, widths, centers, y0, tau: float = 1.0,
             error: float = 0.0, 
             new_goal: np.ndarray = None
         ) -> np.ndarray:
@@ -219,7 +219,7 @@ class DMP:
             
                     f = (np.dot(psi, weights[d]) * phase) / (psi.sum() + 1e-10)
                     
-                    k = self.goal[d] - self.y0[d]
+                    k = self.goal[d] - y0[d]
                     self.ddy[d] = (
                         self.ay[d] * (self.by[d] * (self.goal[d] - self.y[d]) - self.dy[d]) + k * f
                     )
