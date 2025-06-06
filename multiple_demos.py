@@ -1,19 +1,31 @@
 import numpy as np
 import scipy
-from lindsay_dmp_copy import DMP, CanonicalSystem
-import copy
 
+def get_closest_demo(demos, obj_pos):
+    closest = None
+    closest_dist = np.inf
+    for d in demos:
+        demo = demos[d]
+        
+        cur_dist = np.linalg.norm(demo['obs_object'][0, :3] - obj_pos) 
+        if cur_dist < closest_dist:
+            closest_dist = cur_dist
+            closest = demo
+    
+    return closest
+    
+    
 #function that takes in all demo data and splits into 3 sections (move to nut, grab nut, put on peg). returns 3 splits
-def split_demos(self, demos):
+def split_demos(demos):
     pass
     
 #function that takes in segmented demo data and interpolates, return as a list of segments
-def interpolate_demos(self, demos):
+def interpolate_demos(demos):
     pass
 
 #function that 
 
-def imitate_path(self, x_des, dx_des = None, ddx_des = None, t_des = None,
+def imitate_path(x_des, dx_des = None, ddx_des = None, t_des = None,
         g_w = True, **kwargs):
         '''
         Takes in a desired trajectory and generates the set of system

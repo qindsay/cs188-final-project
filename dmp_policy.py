@@ -2,6 +2,8 @@ import numpy as np
 from collections import defaultdict
 from dmp import DMP
 from pid import PID
+from load_data import reconstruct_from_npz
+from multiple_demos import get_closest_demo
 
 
 class DMPPolicyWithPID:
@@ -18,26 +20,29 @@ class DMPPolicyWithPID:
         dt (float): control timestep.
         n_bfs (int): number of basis functions per DMP.
     """
-    def __init__(self, square_pos, demo_path='demonstration_data.npz', dt=0.01, n_bfs=20):
+    def __init__(self, square_pos, demo_path='demos.npz', dt=0.01, n_bfs=20):
         # Load and parse demo [DO NOT CHANGE]
-        raw = np.load(demo_path)
-        demos = defaultdict(dict)
-        for key in raw.files:
-            prefix, trial, field = key.split('_', 2)
-            demos[f"{prefix}_{trial}"][field] = raw[key]
-        demo = demos['demo_98']
+        # raw = np.load(demo_path)
+        # demos = defaultdict(dict)
+        # for key in raw.files:
+        #     prefix, trial, field = key.split('_', 2)
+        #     demos[f"{prefix}_{trial}"][field] = raw[key]
+        # demo = demos['demo_98']
+        
+        demos = reconstruct_from_npz(demo_path)
+        closest_demo = get_closest_demo(demos, square_pos)
 
         # Extract trajectories and grasp
-        ee_pos = demo['obs_robot0_eef_pos']  # (T,3)
+        ee_pos = closest_demo['obs_robot0_eef_pos']  # (T,3)
         T, _ = ee_pos.shape
-        ee_grasp = demo['actions'][:, -1:].astype(int)  # (T,1)
+        ee_grasp = closest_demo['actions'][:, -1:].astype(int)  # (T,1)
         segments = self.detect_grasp_segments(ee_grasp)
 
         # Compute offset for first segment to new object pose
-        demo_obj_pos = demo['obs_object'][0, :3]
+        closest_demo_obj_pos = closest_demo['obs_object'][0, :3]
         new_obj_pos = square_pos
         start, end = segments[0]
-        offset = ee_pos[end-1] - demo_obj_pos
+        offset = ee_pos[end-1] - closest_demo_obj_pos
 
         # TODO: Fit DMPs and generate segment trajectories
         self.dt = dt
