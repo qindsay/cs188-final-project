@@ -175,7 +175,7 @@ class DMP:
             psi = np.exp(-self.widths * (phase - self.centers)**2) #does this ever get initialized correctly?
             
             for d in range(self.n_dmps):            
-         
+                
                 f = (np.dot(psi, self.w[d]) * phase) / (psi.sum() + 1e-10)
                 
                 k = self.goal[d] - self.y0[d]
@@ -218,8 +218,8 @@ class DMP:
                 for d in range(self.n_dmps):            
             
                     f = (np.dot(psi, weights[d]) * phase) / (psi.sum() + 1e-10)
-                    
                     k = self.goal[d] - y0[d]
+            
                     self.ddy[d] = (
                         self.ay[d] * (self.by[d] * (self.goal[d] - self.y[d]) - self.dy[d]) + k * f
                     )

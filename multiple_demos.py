@@ -97,10 +97,10 @@ def gen_psi(x, n_bfs, cs_ax):
     # psi_set = np.nan_to_num(psi_set)
     # return psi_set
 
-    return np.exp(-widths * (x[:,None] - centers)**2).T
+    return np.exp(-widths * (x[:,None] - centers)**2).T, centers, widths
 
     
-def paths_regression(traj_set, n_dmps, n_bfs, dt, t_set = None):
+def paths_regression(traj_set, n_dmps, n_bfs, dt, ay, by, t_set = None):
     '''
     Takes in a set (list) of desired trajectories (with possibly the
     execution times) and generate the weight which realize the best
@@ -108,12 +108,12 @@ def paths_regression(traj_set, n_dmps, n_bfs, dt, t_set = None):
         each element of traj_set should be shaped num_timesteps x n_dim
         trajectories
     '''
-    cs = CanonicalSystem(dt=dt)
+    cs = CanonicalSystem(dt=dt, ax=float(ay/by))
 
     ## Step 1: Generate the set of the forcing terms
     f_set = np.zeros([len(traj_set), n_dmps, cs.timesteps])
-    avg_y0 = np.zeros([len(traj_set), 3])
-    avg_goal = np.zeros([len(traj_set), 3])
+    avg_y0 = np.zeros([len(traj_set), n_dmps])
+    avg_goal = np.zeros([len(traj_set), n_dmps])
 
     # g_new = np.ones(n_dmps)
     for it in range(len(traj_set)):
@@ -148,7 +148,7 @@ def paths_regression(traj_set, n_dmps, n_bfs, dt, t_set = None):
     ## Step 2: Learning of the weights using linear regression
     w = np.zeros([n_dmps, n_bfs])
     s_track = cs.rollout()
-    psi_set = gen_psi(s_track, n_bfs, cs.ax) 
+    psi_set, centers, widths = gen_psi(s_track, n_bfs, cs.ax) 
     psi_sum = np.sum(psi_set, 0)
     psi_sum_2 = psi_sum * psi_sum
     s_track_2 = s_track * s_track
@@ -178,7 +178,8 @@ def paths_regression(traj_set, n_dmps, n_bfs, dt, t_set = None):
 
         # Solve the minimization problem
         w[d, :] = scipy.linalg.lu_solve(LU, b)
-    return w, avg_y0, avg_goal
+    avg_y0 = np.mean(avg_y0, axis=0)
+    return w, avg_y0, centers, widths
     # self.learned_position = np.ones(self.n_dmps)
 
 if __name__ == '__main__':
