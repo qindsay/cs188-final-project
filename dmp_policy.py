@@ -1,10 +1,11 @@
 import numpy as np
 from collections import defaultdict
-from dmp import DMP
+# from dmp import DMP
+from lindsay_dmp_copy import DMP
 from pid import PID
 from load_data import reconstruct_from_npz
 from multiple_demos import paths_regression
-from evelyn_multiple_demos_copy import split_demos, compute_avg_obj_start, compute_avg_traj
+from evelyn_multiple_demos_copy import split_demos, compute_avg_obj_start, compute_avg_traj, compute_avg_eef_start
 
 
 
@@ -37,18 +38,22 @@ class DMPPolicyWithPID:
         
         demos = reconstruct_from_npz(demo_path)
         segdict = split_demos(demos)
-        # print(segdict)
-        
+        seg0 = segdict[0] 
+        seg1 = segdict[1]    
+        seg2 = segdict[2] 
           
-        demo_obj_pos = compute_avg_obj_start(seg1)
-        ee_pos = compute_avg_traj(seg1)
+        demo_obj_pos = compute_avg_obj_start(demos)
+        ee_pos = compute_avg_traj(seg0)
         new_obj_pos = square_pos
         # start, end = segments[0]
         offset = ee_pos[-1] - demo_obj_pos
         
-        weights0, avg_y0, avg_goal = paths_regression(seg1, n_dmps=3, n_bfs=n_bfs, dt=dt)
+        weights0, avg_y0, centers, widths = paths_regression(seg0, n_dmps=3, n_bfs=n_bfs, dt=dt, ay=25.0, by=6.25)
         dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        self.traj0 = dmp0.adapted_rollout(weights0, new_goal=new_obj_pos + offset)
+        self.traj0 = dmp0.rollout_adapted(weights0, y0=avg_y0, centers=centers, widths=widths, new_goal=new_obj_pos + offset)
+        print(self.traj0)
+        self.trajectories = []
+        self.trajectories.append(self.traj0)
     
         # Extract trajectories and grasp
         # ee_pos = demo['obs_robot0_eef_pos']  # (T,3)
@@ -170,7 +175,7 @@ class DMPPolicyWithPID:
                 self.step += 1
 
             
-        if self.stage < 3 and self.step > self.segments[self.stage][1]:
+        if self.stage < 3 and self.step > len(self.trajectories[self.stage]):
             self.stage += 1
             self.justChanged = True
             print("Moved onto", self.stage)

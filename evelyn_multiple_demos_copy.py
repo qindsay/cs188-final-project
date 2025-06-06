@@ -2,7 +2,7 @@ import numpy as np
 import scipy
 
 
-def detect_grasp_segments(self, grasp_flags: np.ndarray) -> list:
+def detect_grasp_segments(grasp_flags: np.ndarray) -> list:
     """
     Identify segments based on grasp toggles.
 
@@ -30,7 +30,8 @@ def detect_grasp_segments(self, grasp_flags: np.ndarray) -> list:
 def split_demos(demos):
     splits = {0: [], 1: [], 2: []}
 
-    for demo in demos.values():
+    for key in demos:
+        demo = demos[key]
         ee_pos = demo['obs_robot0_eef_pos']
         grasp_flags = demo['actions'][:, -1:].astype(int) 
         segments = detect_grasp_segments(grasp_flags)
@@ -64,7 +65,23 @@ def compute_avg_traj(segments):
     avg_traj = np.mean(segs, axis=0)
     return avg_traj
 
-    
+
+def compute_avg_obj_start(demos):
+    obj_start = []
+    for key in demos:
+        demo = demos[key]
+        obj_start.append(demo['obs_object'][0, :3])
+    avg_obj_start = np.stack(obj_start, axis=0)
+    return np.mean(avg_obj_start, axis=0)
+
+def compute_avg_eef_start(demos):
+    eef_start = []
+    for key in demos:
+        demo = demos[key]
+        eef_start.append(demo['obs_robot0_eef_pos'][0, :3])
+    avg_eef_start = np.stack(eef_start, axis=0)
+    return np.mean(avg_eef_start, axis=0)
+        
 # #function that takes in segmented demo data and interpolates, return as a list of segments
 # def interpolate_demos(demos):
 #     pass
