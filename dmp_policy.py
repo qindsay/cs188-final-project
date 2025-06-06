@@ -1,12 +1,7 @@
 import numpy as np
 from collections import defaultdict
-# from dmp import DMP
-from lindsay_dmp_copy import DMP
+from dmp import DMP
 from pid import PID
-from load_data import reconstruct_from_npz
-from multiple_demos import paths_regression
-from evelyn_multiple_demos_copy import split_demos, compute_avg_obj_start, compute_avg_traj, compute_avg_eef_start
-
 
 
 class DMPPolicyWithPID:
@@ -23,84 +18,49 @@ class DMPPolicyWithPID:
         dt (float): control timestep.
         n_bfs (int): number of basis functions per DMP.
     """
-    def __init__(self, square_pos, demo_path="demos.npz", dt=0.01, n_bfs=20):
-        # Load and parse demo [CA3 CODE]
-            # raw = np.load(demo_path)
-            # demos = defaultdict(dict)
-            # demo = np.mean(np.stack(demos), axis=0)
-            # print(list(demos.keys())[:10])
-            # print(list(demos.values())[:10])
-            
-            # for key in raw.files:
-            #     prefix, trial, field = key.split('_', 2)
-            #     demos[f"{prefix}_{trial}"][field] = raw[key]
-            # demo = demos['demo_98']
-        
-        demos = reconstruct_from_npz(demo_path)
-        segdict = split_demos(demos)
-        seg0 = segdict[0] 
-        seg1 = segdict[1]    
-        seg2 = segdict[2] 
-          
-        demo_obj_pos = compute_avg_obj_start(demos)
-        ee_pos = compute_avg_traj(seg0)
-        new_obj_pos = square_pos
-        # start, end = segments[0]
-        offset = ee_pos[-1] - demo_obj_pos
-        
-        weights0, avg_y0, centers, widths = paths_regression(seg0, n_dmps=3, n_bfs=n_bfs, dt=dt, ay=25.0, by=6.25)
-        dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        self.traj0 = dmp0.rollout_adapted(weights0, y0=avg_y0, centers=centers, widths=widths, new_goal=new_obj_pos + offset)
-        print(self.traj0)
-        self.trajectories = []
-        self.trajectories.append(self.traj0)
-    
+    def __init__(self, square_pos, demo_path='demonstration_data.npz', dt=0.01, n_bfs=20):
+        # Load and parse demo [DO NOT CHANGE]
+        raw = np.load(demo_path)
+        demos = defaultdict(dict)
+        for key in raw.files:
+            prefix, trial, field = key.split('_', 2)
+            demos[f"{prefix}_{trial}"][field] = raw[key]
+        demo = demos['demo_98']
+
         # Extract trajectories and grasp
-        # ee_pos = demo['obs_robot0_eef_pos']  # (T,3)
-        # T, _ = ee_pos.shape
-        # ee_grasp = demo['actions'][:, -1:].astype(int)  # (T,1)
-        # segments = self.detect_grasp_segments(ee_grasp)
+        ee_pos = demo['obs_robot0_eef_pos']  # (T,3)
+        T, _ = ee_pos.shape
+        ee_grasp = demo['actions'][:, -1:].astype(int)  # (T,1)
+        segments = self.detect_grasp_segments(ee_grasp)
 
         # Compute offset for first segment to new object pose
-        # demo_obj_pos = demo['obs_object'][0, :3]
-        # new_obj_pos = square_pos
-        # start, end = segments[0]
-        # offset = ee_pos[end-1] - demo_obj_pos
+        demo_obj_pos = demo['obs_object'][0, :3]
+        new_obj_pos = square_pos
+        start, end = segments[0]
+        offset = ee_pos[end-1] - demo_obj_pos
 
         # TODO: Fit DMPs and generate segment trajectories
         self.dt = dt
         self.grasp = [-1, 1, -1]
+        dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
+        dmp0.imitate((ee_pos[start:end]).T)
+        self.traj0 = dmp0.rollout(new_goal=new_obj_pos + offset)
+        self.len0 = len(self.traj0)
+        self.segments = [[0, self.len0-1]]
         
-        #here's my dream workflow - Lindsay
-        '''
-        pretend everything has been split up already
-        weights0 = paths_regression(segment0, all the other parameters)
-        dmp0 = DMP(n_dmps, n_bfs, dt)
-        traj0 = dmp.rollout(weights0, y0, other params)
+        start1, end1 = segments[1]
+        dmp1 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
+        dmp1.imitate((ee_pos[start1:end1]).T)
+        self.traj1 = dmp1.rollout()
+        self.len1 = len(self.traj1)
+        self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len1])
         
-        append indices to the segments list
-        
-        '''
-        # dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        # dmp0.imitate((ee_pos[start:end]).T)
-        # self.traj0 = dmp0.rollout(new_goal=new_obj_pos + offset)
-        # self.len0 = len(self.traj0)
-        # self.segments = [[0, self.len0-1]]
-        
-        
-        # start1, end1 = segments[1]
-        # dmp1 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        # dmp1.imitate((ee_pos[start1:end1]).T)
-        # self.traj1 = dmp1.rollout()
-        # self.len1 = len(self.traj1)
-        # self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len1])
-        
-        # start2, end2 = segments[2]
-        # dmp2 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        # dmp2.imitate((ee_pos[start2:end2]).T)
-        # self.traj2 = dmp2.rollout()
-        # self.len2 = len(self.traj2)
-        # self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len2])
+        start2, end2 = segments[2]
+        dmp2 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
+        dmp2.imitate((ee_pos[start2:end2]).T)
+        self.traj2 = dmp2.rollout()
+        self.len2 = len(self.traj2)
+        self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len2])
         
         self.pid = PID(kp=2.0, ki=0.4, kd=0.4, target=self.traj0[0])
         self.stage = 0
@@ -175,10 +135,10 @@ class DMPPolicyWithPID:
                 self.step += 1
 
             
-        if self.stage < 3 and self.step > len(self.trajectories[self.stage]):
+        if self.stage < 3 and self.step > self.segments[self.stage][1]:
             self.stage += 1
             self.justChanged = True
-            print("Moved onto", self.stage)
+            # print("Moved onto", self.stage)
         
         output = self.pid.update(robot_eef_pos, self.dt)
         action = np.zeros(7)

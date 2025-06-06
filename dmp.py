@@ -172,11 +172,15 @@ class DMP:
         y_track = np.zeros((self.n_dmps, self.cs.timesteps))
         
         for t in range(self.cs.timesteps):
+            #phase = self.cs.x
             phase = self.cs.step(tau=tau, error_coupling=1/(1+error))
             psi = np.exp(-self.widths * (phase - self.centers)**2) #does this ever get initialized correctly?
             
+            # f = np.zeros(self.n_dmps)
             for d in range(self.n_dmps):            
-         
+                # numer = np.dot(self.w[d] * phase, psi)
+                # denom = np.sum(psi)
+                # f[d] = (numer / denom)
                 f = (np.dot(psi, self.w[d]) * phase) / (psi.sum() + 1e-10)
                 
                 k = self.goal[d] - self.y0[d]
@@ -186,6 +190,23 @@ class DMP:
                 self.dy[d] += self.ddy[d] * self.dt * tau * (1.0 / (1.0 + error))
                 self.y[d] += self.dy[d] * self.dt * tau * (1.0 / (1.0 + error))
             y_track[:, t] = self.y
+                
+            """
+                # print(f[d])
+            self.check = np.append(self.check, f)
+            # f_vals = np.array(f_vals)
+
+            self.ddy = tau**2 * (self.ay * (self.by * (self.goal - self.y) - self.dy / tau) + f)
+            # self.ddy = (self.ay * (self.by * (self.goal - self.y) - self.dy) + f)/tau
+            self.dy += self.ddy * self.dt
+            self.y += self.dy * self.dt
+
+            #x = self.cs.step(tau=tau, error_coupling=1/(1+error))
+            #self.cs.x = max(0.0, x) 
+
+            y_track[:, t] = self.y
+            
+            """
             
         return y_track.T
 
