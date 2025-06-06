@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
 from dmp import DMP
+from scipy.spatial.transform import Rotation as R
 
 def detect_grasp_segments(self, grasp_flags: np.ndarray) -> list:
     """
@@ -29,9 +30,12 @@ def detect_grasp_segments(self, grasp_flags: np.ndarray) -> list:
 # function that takes in all demo data and splits into 3 sections (move to nut, grab nut, put on peg). returns 3 splits
 def split_demos(demos, dt=0.01, n_bfs=20):
     splits = {0: [], 1: [], 2: []}
+    quat_splits = {0: [], 1: [], 2: []}
 
     for demo in demos.values():
         ee_pos = demo['obs_robot0_eef_pos']
+        # for rotation
+        ee_quat = demo['obs_robot0_eef_quat']
         grasp_flags = demo['actions'][:, -1:].astype(int) 
         segments = detect_grasp_segments(grasp_flags)
 
@@ -41,6 +45,7 @@ def split_demos(demos, dt=0.01, n_bfs=20):
                 # splits[i].append(ee_pos[start:end])
                 start, end = segments[i]
                 traj = ee_pos[start:end]
+                quat = ee_quat[start:end]
 
                 # Imitate DMP for this trajectory
                 dmp = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
@@ -48,8 +53,9 @@ def split_demos(demos, dt=0.01, n_bfs=20):
                 rollout = dmp.rollout()
                 
                 splits[i].append(rollout)
+                quat_splits[i].append(quat)
 
-    return splits
+    return splits, quat_splits
 
 # function that computes the average trajectory segments
 def compute_avg_traj(segments):
@@ -70,6 +76,13 @@ def compute_avg_traj(segments):
     segs = np.stack(modified_segs, axis=0)
     avg_traj = np.mean(segs, axis=0)
     return avg_traj
+
+# function that computes the average quaternions
+def average_quaternions(quat_list):
+    R_matrices = R.from_quat(quat_list).as_matrix()
+    R_avg = np.mean(R_matrices, axis=0)
+    rot_avg = R.from_matrix(R_avg)
+    return rot_avg.as_quat()
 
     
 # #function that takes in segmented demo data and interpolates, return as a list of segments

@@ -3,7 +3,8 @@ from collections import defaultdict
 from dmp import DMP
 from pid import PID
 from load_data import reconstruct_from_npz
-from evelyn_multiple_demos_copy import split_demos, compute_avg_traj #TODO: fix this name of the file
+from evelyn_multiple_demos_copy import split_demos, compute_avg_traj, average_quaternions #TODO: fix this name of the file
+from scipy.spatial.transform import Rotation as R # for rotation, nut orientation
 
 
 class DMPPolicyWithPID:
@@ -54,11 +55,14 @@ class DMPPolicyWithPID:
         dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
         # imitate take in the average segment trajectories
         # TODO: replace this segments with the split demos
-        splits = split_demos(demos, n_bfs=n_bfs, dt=dt)
+        splits, quats_splits= split_demos(demos, n_bfs=n_bfs, dt=dt)
 
         self.traj0 = compute_avg_traj(splits[0])
         self.traj1 = compute_avg_traj(splits[1])
         self.traj2 = compute_avg_traj(splits[2])
+        self.quat0 = average_quaternions(np.stack(quats_splits[0]))
+        self.quat1 = average_quaternions(np.stack(quats_splits[1]))
+        self.quat2 = average_quaternions(np.stack(quats_splits[2]))
         # dmp0.imitate((ee_pos[start:end]).T)
         # self.traj0 = dmp0.rollout(new_goal=new_obj_pos + offset)
         # self.len0 = len(self.traj0)
@@ -107,7 +111,8 @@ class DMPPolicyWithPID:
         res.append((start, length))   
         return res
 
-    def get_action(self, robot_eef_pos: np.ndarray) -> np.ndarray:
+    # TODO: change this to accept quaternians?
+    def get_action(self, robot_eef_pos: np.ndarray, robot_eef_quat: np.ndarray) -> np.ndarray:
         """
         Compute next action for the robot's end-effector.
 
@@ -125,6 +130,7 @@ class DMPPolicyWithPID:
         
         if self.stage == 0:  
             self.pid.target = self.traj0[self.step]
+            target_quat = self.quat0
             delta_pos = np.linalg.norm(self.pid.target - robot_eef_pos)
             
             if delta_pos < OBJ_DIST_THRESH:
@@ -135,6 +141,7 @@ class DMPPolicyWithPID:
                 self.justChanged = False                  
             
             delta_pos = np.linalg.norm(self.pid.target - robot_eef_pos)
+            target_quat = self.quat1
             
             if delta_pos < OBJ_DIST_THRESH:
                 self.pid.target = self.traj1[self.step-self.len0]
@@ -145,6 +152,7 @@ class DMPPolicyWithPID:
                 self.justChanged = False
                 
             delta_pos = np.linalg.norm(self.pid.target - robot_eef_pos)
+            target_quat = self.quat2
             
             if delta_pos < OBJ_DIST_THRESH:
                 self.pid.target = self.traj2[self.step-(self.len1+self.len0)]
@@ -157,8 +165,13 @@ class DMPPolicyWithPID:
             print("Moved onto", self.stage)
         
         output = self.pid.update(robot_eef_pos, self.dt)
+        current_rot = R.from_quat(robot_eef_quat)
+        target_rot = R.from_quat(target_quat)
+        rot_vec = (target_rot * current_rot.inv()).as_rotvec()
+
         action = np.zeros(7)
         action[0:3] = output
+        action[3:6] = rot_vec
         if self.stage < 3:
             action[6] = self.grasp[self.stage]
         else:
