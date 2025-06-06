@@ -1,6 +1,6 @@
 import numpy as np
 import scipy
-
+from dmp import DMP
 
 def detect_grasp_segments(self, grasp_flags: np.ndarray) -> list:
     """
@@ -27,7 +27,7 @@ def detect_grasp_segments(self, grasp_flags: np.ndarray) -> list:
     return res
 
 # function that takes in all demo data and splits into 3 sections (move to nut, grab nut, put on peg). returns 3 splits
-def split_demos(demos):
+def split_demos(demos, dt=0.01, n_bfs=20):
     splits = {0: [], 1: [], 2: []}
 
     for demo in demos.values():
@@ -37,12 +37,19 @@ def split_demos(demos):
 
         if len(segments) >= 3:
             for i in range(3):
+                # start, end = segments[i]
+                # splits[i].append(ee_pos[start:end])
                 start, end = segments[i]
-                splits[i].append(ee_pos[start:end])
+                traj = ee_pos[start:end]
+
+                # Imitate DMP for this trajectory
+                dmp = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
+                dmp.imitate(traj.T)
+                rollout = dmp.rollout()
+                
+                splits[i].append(rollout)
 
     return splits
-
-import numpy as np
 
 # function that computes the average trajectory segments
 def compute_avg_traj(segments):

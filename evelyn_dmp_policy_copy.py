@@ -3,7 +3,7 @@ from collections import defaultdict
 from dmp import DMP
 from pid import PID
 from load_data import reconstruct_from_npz
-from multiple_demos import combine, split_demos, compute_avg_traj
+from evelyn_multiple_demos_copy import split_demos, compute_avg_traj #TODO: fix this name of the file
 
 
 class DMPPolicyWithPID:
@@ -53,24 +53,30 @@ class DMPPolicyWithPID:
         self.grasp = [-1, 1, -1]
         dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
         # imitate take in the average segment trajectories
-        dmp0.imitate((ee_pos[start:end]).T)
-        self.traj0 = dmp0.rollout(new_goal=new_obj_pos + offset)
-        self.len0 = len(self.traj0)
-        self.segments = [[0, self.len0-1]]
+        # TODO: replace this segments with the split demos
+        splits = split_demos(demos, n_bfs=n_bfs, dt=dt)
+
+        self.traj0 = compute_avg_traj(splits[0])
+        self.traj1 = compute_avg_traj(splits[1])
+        self.traj2 = compute_avg_traj(splits[2])
+        # dmp0.imitate((ee_pos[start:end]).T)
+        # self.traj0 = dmp0.rollout(new_goal=new_obj_pos + offset)
+        # self.len0 = len(self.traj0)
+        # self.segments = [[0, self.len0-1]]
         
-        start1, end1 = segments[1]
-        dmp1 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        dmp1.imitate((ee_pos[start1:end1]).T)
-        self.traj1 = dmp1.rollout()
-        self.len1 = len(self.traj1)
-        self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len1])
+        # start1, end1 = segments[1]
+        # dmp1 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
+        # dmp1.imitate((ee_pos[start1:end1]).T)
+        # self.traj1 = dmp1.rollout()
+        # self.len1 = len(self.traj1)
+        # self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len1])
         
-        start2, end2 = segments[2]
-        dmp2 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        dmp2.imitate((ee_pos[start2:end2]).T)
-        self.traj2 = dmp2.rollout()
-        self.len2 = len(self.traj2)
-        self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len2])
+        # start2, end2 = segments[2]
+        # dmp2 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
+        # dmp2.imitate((ee_pos[start2:end2]).T)
+        # self.traj2 = dmp2.rollout()
+        # self.len2 = len(self.traj2)
+        # self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len2])
         
         self.pid = PID(kp=2.0, ki=0.4, kd=0.4, target=self.traj0[0])
         self.stage = 0
