@@ -4,7 +4,14 @@ from dmp import DMP
 from pid import PID
 from load_data import reconstruct_from_npz
 from multiple_demos import get_closest_demo
+from scipy.spatial.transform import Rotation as R
 
+
+def rotate_quat_sequence(quats, R_delta):
+    R_q = R.from_quat(quats)
+    R_rot = R.from_matrix(R_delta)
+    R_new = R_rot * R_q  # Compose rotation
+    return R_new.as_quat()
 
 class DMPPolicyWithPID:
     """
@@ -20,17 +27,12 @@ class DMPPolicyWithPID:
         dt (float): control timestep.
         n_bfs (int): number of basis functions per DMP.
     """
-    def __init__(self, square_pos, demo_path='demos.npz', dt=0.01, n_bfs=20):
-        # Load and parse demo [DO NOT CHANGE]
-        # raw = np.load(demo_path)
-        # demos = defaultdict(dict)
-        # for key in raw.files:
-        #     prefix, trial, field = key.split('_', 2)
-        #     demos[f"{prefix}_{trial}"][field] = raw[key]
-        # demo = demos['demo_98']
+    def __init__(self, obs, demo_path='demos.npz', dt=0.01, n_bfs=20):
+        square_pos = obs['SquareNut_pos']
         
         demos = reconstruct_from_npz(demo_path)
         closest_demo = get_closest_demo(demos, square_pos)
+        # print(closest_demo.keys())
 
         # Extract trajectories and grasp
         ee_pos = closest_demo['obs_robot0_eef_pos']  # (T,3)
@@ -43,19 +45,41 @@ class DMPPolicyWithPID:
         new_obj_pos = square_pos
         start, end = segments[0]
         offset = ee_pos[end-1] - closest_demo_obj_pos
+        
+        quat_demo = closest_demo['obs_object'][0, 3:7]
+        # quat_new = square  # You need this input!
+        quat_new = obs['SquareNut_quat']
+
+        # Convert to rotation matrices
+        R_demo = R.from_quat(quat_demo).as_matrix()
+        R_new = R.from_quat(quat_new).as_matrix()
+
+        # Rotation from demo to new pose
+        R_delta = R_new @ R_demo.T
+
+        # Rotate trajectory segment
+        seg = ee_pos[start:end] - closest_demo_obj_pos  # relative to object
+        seg_rotated = seg @ R_delta.T
+        new_segment = seg_rotated + new_obj_pos  #
+        
+        # eef_quat = closest_demo['obs_robot0_eef_quat']  # (T, 4)
+
+        # eef_quat0 = eef_quat[start:end]
+        # eef_quat0_rot = rotate_quat_sequence(eef_quat0, R_delta)
+        # self.target_quat = eef_quat0_rot
 
         # TODO: Fit DMPs and generate segment trajectories
         self.dt = dt
         self.grasp = [-1, 1, -1]
         dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        dmp0.imitate((ee_pos[start:end]).T)
+        dmp0.imitate((new_segment).T)
         self.traj0 = dmp0.rollout(new_goal=new_obj_pos + offset)
         self.len0 = len(self.traj0)
         self.segments = [[0, self.len0-1]]
         
         start1, end1 = segments[1]
         dmp1 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        dmp1.imitate((ee_pos[start1:end1]).T)
+        dmp1.imitate((new_segment).T)
         self.traj1 = dmp1.rollout()
         self.len1 = len(self.traj1)
         self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len1])
@@ -143,11 +167,12 @@ class DMPPolicyWithPID:
         if self.stage < 3 and self.step > self.segments[self.stage][1]:
             self.stage += 1
             self.justChanged = True
-            # print("Moved onto", self.stage)
+            print("Moved onto", self.stage)
         
         output = self.pid.update(robot_eef_pos, self.dt)
         action = np.zeros(7)
         action[0:3] = output
+        # action[3:7] = self.target_quat[self.step]
         if self.stage < 3:
             action[6] = self.grasp[self.stage]
         else:

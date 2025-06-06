@@ -39,7 +39,10 @@ success_rate = 0
 # reset the environment
 for _ in range(5):
     obs = env.reset()
-    policy = DMPPolicyWithPID(obs['SquareNut_pos']) 
+    
+    # print("hello")
+    # print(obs.keys())
+    policy = DMPPolicyWithPID(obs) 
     for _ in range(2500):
         action = policy.get_action(obs['robot0_eef_pos'])
         obs, reward, done, info = env.step(action)  # take action in the environment
