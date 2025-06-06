@@ -3,7 +3,6 @@ import scipy
 from lindsay_dmp_copy import DMP, CanonicalSystem
 import copy
 
-
 #function that takes in all demo data and splits into 3 sections (move to nut, grab nut, put on peg). returns 3 splits
 def split_demos(self, demos):
     pass
@@ -113,6 +112,9 @@ def paths_regression(traj_set, n_dmps, n_bfs, dt, t_set = None):
 
     ## Step 1: Generate the set of the forcing terms
     f_set = np.zeros([len(traj_set), n_dmps, cs.timesteps])
+    avg_y0 = np.zeros([len(traj_set), 3])
+    avg_goal = np.zeros([len(traj_set), 3])
+
     # g_new = np.ones(n_dmps)
     for it in range(len(traj_set)):
         traj = traj_set[it].T
@@ -138,7 +140,9 @@ def paths_regression(traj_set, n_dmps, n_bfs, dt, t_set = None):
         tempDMP = DMP(n_dmps, n_bfs, dt)
         # f_tmp = self.imitate_path(x_des = x_des_tmp, t_des = t_des_tmp,
         #     g_w = False, add_force = None)        
-        f_tmp = tempDMP.imitate(traj)
+        f_tmp, y0, goal = tempDMP.imitate(traj)
+        avg_y0[it] = y0
+        avg_goal[it] = goal
         f_set[it, :, :] = f_tmp.copy() # add the new forcing term to the set
 
     ## Step 2: Learning of the weights using linear regression
@@ -174,7 +178,7 @@ def paths_regression(traj_set, n_dmps, n_bfs, dt, t_set = None):
 
         # Solve the minimization problem
         w[d, :] = scipy.linalg.lu_solve(LU, b)
-    return w
+    return w, avg_y0, avg_goal
     # self.learned_position = np.ones(self.n_dmps)
 
 if __name__ == '__main__':
