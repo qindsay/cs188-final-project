@@ -41,45 +41,33 @@ class DMPPolicyWithPID:
         segments = self.detect_grasp_segments(ee_grasp)
 
         # Compute offset for first segment to new object pose
-        closest_demo_obj_pos = closest_demo['obs_object'][0, :3]
+        closest_demo_obj_pos = closest_demo['obs_object'][0,:3]
         new_obj_pos = square_pos
         start, end = segments[0]
         offset = ee_pos[end-1] - closest_demo_obj_pos
-        
-        quat_demo = closest_demo['obs_object'][0, 3:7]
-        # quat_new = square  # You need this input!
-        quat_new = obs['SquareNut_quat']
-
-        # Convert to rotation matrices
-        R_demo = R.from_quat(quat_demo).as_matrix()
-        R_new = R.from_quat(quat_new).as_matrix()
-
-        # Rotation from demo to new pose
-        R_delta = R_new @ R_demo.T
-
-        # Rotate trajectory segment
-        seg = ee_pos[start:end] - closest_demo_obj_pos  # relative to object
-        seg_rotated = seg @ R_delta.T
-        new_segment = seg_rotated + new_obj_pos  #
-        
-        # eef_quat = closest_demo['obs_robot0_eef_quat']  # (T, 4)
-
-        # eef_quat0 = eef_quat[start:end]
-        # eef_quat0_rot = rotate_quat_sequence(eef_quat0, R_delta)
-        # self.target_quat = eef_quat0_rot
+    
 
         # TODO: Fit DMPs and generate segment trajectories
         self.dt = dt
         self.grasp = [-1, 1, -1]
         dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        dmp0.imitate((new_segment).T)
-        self.traj0 = dmp0.rollout(new_goal=new_obj_pos + offset)
+        dmp0.imitate((ee_pos[start:end]).T)
+        obj_traj = min(closest_demo['obs_robot0_eef_pos'], key=lambda x: x[0])
+        traj_right = obj_traj[1] > 0.14 #demo picks up from the right side of the nut
+        new_goal = new_obj_pos + offset
+                
+        if traj_right: 
+            new_goal[2] -= 0.02  # Move 2cm to make sure we actually pick up nut
+            print("Adjusting goal down due to traj_right")
+        
+        #if right approach, shift goal left. if left approach, shift goal right
+        self.traj0 = dmp0.rollout(new_goal=new_goal)
         self.len0 = len(self.traj0)
         self.segments = [[0, self.len0-1]]
         
         start1, end1 = segments[1]
         dmp1 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        dmp1.imitate((new_segment).T)
+        dmp1.imitate((ee_pos[start1:end1]).T)
         self.traj1 = dmp1.rollout()
         self.len1 = len(self.traj1)
         self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len1])
@@ -91,7 +79,7 @@ class DMPPolicyWithPID:
         self.len2 = len(self.traj2)
         self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len2])
         
-        self.pid = PID(kp=2.0, ki=0.4, kd=0.4, target=self.traj0[0])
+        self.pid = PID(kp=8.0, ki=0.4, kd=0.4, target=self.traj0[0])
         self.stage = 0
         self.step = 0
         self.justChanged = False

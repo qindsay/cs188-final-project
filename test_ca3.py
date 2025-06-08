@@ -43,7 +43,7 @@ for _ in range(5):
     # print("hello")
     # print(obs.keys())
     policy = DMPPolicyWithPID(obs) 
-    for _ in range(2500):
+    for _ in range(500):
         action = policy.get_action(obs['robot0_eef_pos'])
         obs, reward, done, info = env.step(action)  # take action in the environment
         env.render()  # render on display
