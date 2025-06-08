@@ -44,22 +44,35 @@ class DMPPolicyWithPID:
 
         # Extract trajectories and grasp
         ee_pos = closest_demo['obs_robot0_eef_pos']  # (T,3)
+        # ee_quat = closest_demo['obs_robot0_eef_quat']
+        # print("ee_quat shape:", ee_quat.shape)
+        # print("ee_quat[0:5]:", ee_quat[0:5])
         T, _ = ee_pos.shape
         ee_grasp = closest_demo['actions'][:, -1:].astype(int)  # (T,1)
         segments = self.detect_grasp_segments(ee_grasp)
+        
+        
 
         # Compute offset for first segment to new object pose
         closest_demo_obj_pos = closest_demo['obs_object'][0,:3]
         new_obj_pos = square_pos
-        start, end = segments[0]
-        offset = ee_pos[end-1] - closest_demo_obj_pos
-    
+        start0, end0 = segments[0]
+        offset = ee_pos[end0-1] - closest_demo_obj_pos
+        
+        # eef_quat = closest_demo['obs_robot0_eef_quat']  # (T, 4)Add commentMore actions
 
+        # eef_quat0 = ee_quat[start0:end0]
+        # eef_quat0_rot = rotate_quat_sequence(eef_quat0, R_delta)
+        # print("R_delta:\n", R_delta)
+        # print("eef_quat0[0]:", eef_quat0[0])
+        # print("Rotated quat0[0]:", eef_quat0_rot[0])
+        # print("Norm:", np.linalg.norm(eef_quat0_rot[0]))
+    
         # TODO: Fit DMPs and generate segment trajectories
         self.dt = dt
         self.grasp = [-1, 1, -1]
         dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        dmp0.imitate((ee_pos[start:end]).T)
+        dmp0.imitate((ee_pos[start0:end0]).T)
         obj_traj = min(closest_demo['obs_robot0_eef_pos'], key=lambda x: x[0])
         traj_right = obj_traj[1] > 0.14 #demo picks up from the right side of the nut
         new_goal = new_obj_pos + offset
@@ -68,16 +81,24 @@ class DMPPolicyWithPID:
             new_goal[2] -= 0.02  # Move 2cm to make sure we actually pick up nut
             print("Adjusting goal down due to traj_right")
         
-        #if right approach, shift goal left. if left approach, shift goal right
+        #TODO: if right approach, shift goal left. if left approach, shift goal right!!!!!!!
         self.traj0 = dmp0.rollout(new_goal=new_goal)
-        self.quat0 = eef_quat0_rot
+        # self.quat0 = eef_quat0_rot
         self.len0 = len(self.traj0)
         self.segments = [[0, self.len0-1]]
         
+        # eef_quat1 = ee_quat[start1:end1]
+        # eef_quat1_rot = rotate_quat_sequence(eef_quat1, R_delta)
         start1, end1 = segments[1]
         dmp1 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
+        # seg1 = ee_pos[start1:end1] - closest_demo_obj_pos
+        # seg1_rotated = seg1 @ R_delta.T
+        # new_segment1 = seg1_rotated + new_obj_pos
+        # dmp1.imitate(new_segment1.T)
         dmp1.imitate((ee_pos[start1:end1]).T)
         self.traj1 = dmp1.rollout()
+        # self.quat1 = eef_quat1_rot
+
         self.len1 = len(self.traj1)
         self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len1])
         
@@ -85,9 +106,12 @@ class DMPPolicyWithPID:
         dmp2 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
         dmp2.imitate((ee_pos[start2:end2]).T)
         self.traj2 = dmp2.rollout()
+        # self.quat2 = ee_quat[start2:end2]
         self.len2 = len(self.traj2)
         self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len2])
         
+        # self.quaternions = [self.quat0, self.quat1, self.quat2]
+
         self.pid = PID(kp=8.0, ki=0.4, kd=0.4, target=self.traj0[0])
         self.stage = 0
         self.step = 0
@@ -171,6 +195,12 @@ class DMPPolicyWithPID:
         action[0:3] = output
         # action[3:7] = self.target_quat[self.step]
         if self.stage < 3:
+            # quat_idx = self.step - self.segments[self.stage][0]Add commentMore actions
+            # quat_idx = np.clip(quat_idx, 0, len(self.quaternions[self.stage]) - 1)
+            # current_quat = self.quaternions[self.stage][quat_idx]
+            # current_quat = current_quat / np.linalg.norm(current_quat)
+            # action[3:7] = current_quat
+            
             action[6] = self.grasp[self.stage]
         else:
             action[6] = 0
