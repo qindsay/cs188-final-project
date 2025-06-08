@@ -7,11 +7,25 @@ from multiple_demos import get_closest_demo
 from scipy.spatial.transform import Rotation as R
 
 
+# def rotate_quat_sequence(quats, R_delta):
+#     R_q = R.from_quat(quats)
+#     R_rot = R.from_matrix(R_delta)
+#     R_new = R_rot* R_q  # Compose rotation
+#     return R_new.as_quat()
 def rotate_quat_sequence(quats, R_delta):
     R_q = R.from_quat(quats)
     R_rot = R.from_matrix(R_delta)
-    R_new = R_rot * R_q  # Compose rotation
-    return R_new.as_quat()
+    R_new = R_q * R_rot  # Apply delta after original
+
+    quats_new = R_new.as_quat()
+
+    # Fix potential discontinuities
+    for i in range(1, len(quats_new)):
+        if np.dot(quats_new[i], quats_new[i-1]) < 0:
+            quats_new[i] = -quats_new[i]
+
+    return quats_new
+
 
 class DMPPolicyWithPID:
     """
@@ -37,7 +51,11 @@ class DMPPolicyWithPID:
 
         # Extract trajectories and grasp
         ee_pos = closest_demo['obs_robot0_eef_pos']  # (T,3)
-        # ee_quat = closest_demo['obs_robot0_eef_quat']
+        ee_quat = closest_demo['obs_robot0_eef_quat']
+        print("ee_quat shape:", ee_quat.shape)
+        print("ee_quat[0:5]:", ee_quat[0:5])
+
+                
         T, _ = ee_pos.shape
         ee_grasp = closest_demo['actions'][:, -1:].astype(int)  # (T,1)
         segments = self.detect_grasp_segments(ee_grasp)
@@ -66,11 +84,16 @@ class DMPPolicyWithPID:
         seg_rotated = seg @ R_delta.T
         new_segment = seg_rotated + new_obj_pos  #
         
-        # eef_quat = closest_demo['obs_robot0_eef_quat']  # (T, 4)
+        eef_quat = closest_demo['obs_robot0_eef_quat']  # (T, 4)
 
-        # eef_quat0 = ee_quat[start0:end0]
-        # eef_quat0_rot = rotate_quat_sequence(eef_quat0, R_delta)
-        # self.target_quat = eef_quat0_rot
+        eef_quat0 = ee_quat[start0:end0]
+        eef_quat0_rot = rotate_quat_sequence(eef_quat0, R_delta)
+        print("R_delta:\n", R_delta)
+        print("eef_quat0[0]:", eef_quat0[0])
+        print("Rotated quat0[0]:", eef_quat0_rot[0])
+        print("Norm:", np.linalg.norm(eef_quat0_rot[0]))
+
+        self.target_quat = eef_quat0_rot
 
         # TODO: Fit DMPs and generate segment trajectories
         self.dt = dt
@@ -78,7 +101,7 @@ class DMPPolicyWithPID:
         dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
         dmp0.imitate((new_segment).T)
         self.traj0 = dmp0.rollout(new_goal=new_obj_pos + offset)
-        # self.quat0 = eef_quat0_rot
+        self.quat0 = eef_quat0_rot
         self.len0 = len(self.traj0)
         self.segments = [[0, self.len0-1]]
         
@@ -86,12 +109,16 @@ class DMPPolicyWithPID:
         # seg1 = ee_pos[start1:end1] - closest_demo_obj_pos
         # seg1_rotated = seg1 @ R_delta.T
         # new_segment = seg1_rotated + new_obj_pos
-        # eef_quat1 = ee_quat[start1:end1]
-        # eef_quat1_rot = rotate_quat_sequence(eef_quat1, R_delta)
+        eef_quat1 = ee_quat[start1:end1]
+        eef_quat1_rot = rotate_quat_sequence(eef_quat1, R_delta)
         dmp1 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
-        dmp1.imitate((new_segment).T)
+        seg1 = ee_pos[start1:end1] - closest_demo_obj_pos
+        seg1_rotated = seg1 @ R_delta.T
+        new_segment1 = seg1_rotated + new_obj_pos
+        dmp1.imitate(new_segment1.T)
+        # dmp1.imitate((new_segment).T)
         self.traj1 = dmp1.rollout()
-        # self.quat1 = eef_quat1_rot
+        self.quat1 = eef_quat1_rot
         self.len1 = len(self.traj1)
         self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len1])
         
@@ -99,12 +126,12 @@ class DMPPolicyWithPID:
         dmp2 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
         dmp2.imitate((ee_pos[start2:end2]).T)
         self.traj2 = dmp2.rollout()
-        # self.quat2 = ee_quat[start2:end2]
+        self.quat2 = ee_quat[start2:end2]
         self.len2 = len(self.traj2)
         self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len2])
 
         # self.trajectories = [self.traj0, self.traj1, self.traj2]
-        # self.quaternions = [self.quat0, self.quat1, self.quat2]
+        self.quaternions = [self.quat0, self.quat1, self.quat2]
         
         self.pid = PID(kp=2.0, ki=0.4, kd=0.4, target=self.traj0[0])
         self.stage = 0
@@ -188,7 +215,17 @@ class DMPPolicyWithPID:
         action = np.zeros(7)
         action[0:3] = output
         # action[3:7] = self.target_quat[self.step]
+        if self.stage == 0 and self.step < 10:
+            print(f"[Stage 0] Step {self.step}: Position Target = {self.pid.target}, Orientation = {action[3:7]}")
+
+
         if self.stage < 3:
+            quat_idx = self.step - self.segments[self.stage][0]
+            quat_idx = np.clip(quat_idx, 0, len(self.quaternions[self.stage]) - 1)
+            current_quat = self.quaternions[self.stage][quat_idx]
+            current_quat = current_quat / np.linalg.norm(current_quat)
+            action[3:7] = current_quat
+
             action[6] = self.grasp[self.stage]
         else:
             action[6] = 0
