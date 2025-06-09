@@ -11,7 +11,7 @@ This is the default project, which completes the Square Assembly task from Robos
     ```bash
     git clone https://github.com/qindsay/cs188-final-project.git
     cd cs188-final-project
-3. ```mjpython test_ca3.py```
+3. Run the code: ```mjpython test_ca3.py```
 
 ## Contributors:
 Evelyn Cho, Lindsay Qin
