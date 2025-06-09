@@ -71,9 +71,12 @@ class DMPPolicyWithPID:
         # TODO: Fit DMPs and generate segment trajectories
         self.dt = dt
         self.grasp = [-1, 1, -1]
+
+        
         dmp0 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
         dmp0.imitate((ee_pos[start0:end0]).T)
-        obj_traj = min(closest_demo['obs_robot0_eef_pos'], key=lambda x: x[0])
+        # obj_traj = min(closest_demo['obs_robot0_eef_pos'], key=lambda x: x[0])
+        obj_traj = min(ee_pos, key=lambda x: x[0])
         traj_right = obj_traj[1] > 0.14 #demo picks up from the right side of the nut
         new_goal = new_obj_pos + offset
                 
@@ -105,7 +108,20 @@ class DMPPolicyWithPID:
         start2, end2 = segments[2]
         dmp2 = DMP(n_dmps=3, n_bfs=n_bfs, dt=dt)
         dmp2.imitate((ee_pos[start2:end2]).T)
-        self.traj2 = dmp2.rollout()
+        orig_orientation = ee_pos[end2 - 1].copy()
+        adjusted_orientation = orig_orientation.copy()
+        if traj_right:
+            adjusted_orientation[1] -= 0.05 
+            adjusted_orientation[0] += 0.02
+            adjusted_orientation[2] += 0.03
+            print("if coming from right-side")
+        else:
+            adjusted_orientation[1] += 0.05
+            adjusted_orientation[0] -= 0.06
+            adjusted_orientation[2] += 0.03
+            print("if coming from left-side approach")
+        self.traj2 = dmp2.rollout(new_goal=adjusted_orientation)
+        # self.traj2 = dmp2.rollout()
         # self.quat2 = ee_quat[start2:end2]
         self.len2 = len(self.traj2)
         self.segments.append([self.segments[-1][1]+1, self.segments[-1][1] + self.len2])
@@ -113,9 +129,19 @@ class DMPPolicyWithPID:
         # self.quaternions = [self.quat0, self.quat1, self.quat2]
 
         self.pid = PID(kp=8.0, ki=0.4, kd=0.4, target=self.traj0[0])
+        # self.pid = PID(kp=10.0, ki=0.1, kd=0.1, target=np.zeros(len(self.traj0[0])))
         self.stage = 0
         self.step = 0
         self.justChanged = False
+
+        # nudge to push it down
+        self.nudge = False
+        self.nudge_count = 0
+        self.nudge_aligned = None
+
+        # self.delay_counter = 0
+        # self.delay_duration = 100
+
         
     def detect_grasp_segments(self, grasp_flags: np.ndarray) -> list:
         """
@@ -156,7 +182,44 @@ class DMPPolicyWithPID:
         # TODO: assemble action (zero rotation + grasp)
         
         OBJ_DIST_THRESH = 0.03
-        
+
+        if self.stage >= 3:
+            if not self.rotation_applied:
+                angle = np.deg2rad(5) # adjust angle by 5
+                rot_matrix = R.from_euler('z', angle).as_matrix()
+            
+                rot_quat = R.from_matrix(rot_matrix).as_quat()
+                rot_quat = rot_quat / np.linalg.norm(rot_quat)
+
+                action = np.zeros(7)
+                action[0:3] = np.zeros(3)
+                action[3:7] = rot_quat
+                action[6] = 0.0
+                self.rotation_applied = True
+                print("Rotate a bit before drop")
+                return action
+            if not self.nudge:
+                self.nudge = True
+                self.nudge_aligned = robot_eef_pos.copy()
+                self.nudge_count = 0
+                self.nudge_direction = np.array([0.05, 0.00, -0.03]) 
+                self.pid.reset(target=self.nudge_aligned + self.nudge_direction)
+                print("Starting nudge")
+            if self.nudge_count < 10:
+                output = self.pid.update(robot_eef_pos, self.dt)
+
+                action = np.zeros(7)
+                action[0:3] = output
+                action[6] = 0.0
+                self.nudge_count += 1
+                return action
+            # if self.delay_counter < self.delay_duration:
+            #     # after nudge is done, delay
+            #     self.delay_counter += 1
+            #     return np.zeros(7)
+            else:
+                return np.zeros(7)
+
         if self.stage == 0:  
             self.pid.target = self.traj0[self.step]
             delta_pos = np.linalg.norm(self.pid.target - robot_eef_pos)
@@ -186,6 +249,9 @@ class DMPPolicyWithPID:
 
             
         if self.stage < 3 and self.step > self.segments[self.stage][1]:
+            if self.stage == 2:
+                self.pending_rotation = True
+                self.rotation_applied = False
             self.stage += 1
             self.justChanged = True
             print("Moved onto", self.stage)
